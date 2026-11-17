@@ -1,0 +1,116 @@
+---
+# Unit tests for rules. Run: scripts/check.sh  (uses `promtool test rules`)
+rule_files:
+  - ../rules/recording.rules.yml
+  - ../rules/alerts.rules.yml
+
+evaluation_interval: 15s
+
+tests:
+  # --- TargetDown: fires only after `for: 2m`
+  - interval: 15s
+    input_series:
+      - series: 'up{job="node", instance="node-exporter:9100"}'
+        values: "1 1 0x12"
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: TargetDown
+        exp_alerts: []
+      - eval_time: 3m
+        alertname: TargetDown
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: node
+              instance: node-exporter:9100
+            exp_annotations:
+              summary: "Target node (node-exporter:9100) is down"
+              description: "Prometheus cannot scrape node-exporter:9100 of job node for more than 2 minutes."
+
+  # --- NginxDown
+  - interval: 15s
+    input_series:
+      - series: 'nginx_up{job="nginx", instance="nginx-exporter:9113"}'
+        values: "0x8"
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: NginxDown
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              job: nginx
+              instance: nginx-exporter:9113
+            exp_annotations:
+              summary: "Nginx is down"
+              description: "nginx-exporter at nginx-exporter:9113 cannot read Nginx stub_status for more than 1 minute."
+
+  # --- NginxHighConnections: 120 connections for 2 minutes
+  - interval: 15s
+    input_series:
+      - series: 'nginx_connections_active{job="nginx", instance="nginx-exporter:9113"}'
+        values: "120x8"
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: NginxHighConnections
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: nginx
+              instance: nginx-exporter:9113
+            exp_annotations:
+              summary: "Nginx has many active connections"
+              description: "120 active connections on nginx-exporter:9113 (threshold 50). Try scripts/load-test.sh to trigger this alert."
+
+  # --- ContainerHighCPU: counter grows 0.9 CPU-seconds per second = 90%
+  - interval: 15s
+    input_series:
+      - series: 'container_cpu_usage_seconds_total{name="nginx", cpu="total"}'
+        values: "0+13.5x40"
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: ContainerHighCPU
+        exp_alerts: []
+      - eval_time: 8m
+        alertname: ContainerHighCPU
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              name: nginx
+            exp_annotations:
+              summary: "Container nginx uses high CPU"
+              description: "Container nginx has used 90.0% CPU for more than 5 minutes."
+
+  # --- ContainerHighMemory: 120MiB used of 128MiB limit; a container without limit must not alert
+  - interval: 15s
+    input_series:
+      - series: 'container_memory_working_set_bytes{name="nginx"}'
+        values: "125829120x12"
+      - series: 'container_spec_memory_limit_bytes{name="nginx"}'
+        values: "134217728x12"
+      - series: 'container_memory_working_set_bytes{name="grafana"}'
+        values: "500000000x12"
+      - series: 'container_spec_memory_limit_bytes{name="grafana"}'
+        values: "0x12"
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: ContainerHighMemory
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              name: nginx
+            exp_annotations:
+              summary: "Container nginx is close to its memory limit"
+              description: "Container nginx uses 93.75% of its memory limit."
+
+  # --- Recording rule sanity check
+  - interval: 15s
+    input_series:
+      - series: 'nginx_http_requests_total{job="nginx", instance="nginx-exporter:9113"}'
+        values: "0+150x10"
+    promql_expr_test:
+      # 150 requests every 15s = 10 req/s (round() avoids float noise)
+      - expr: round(job:nginx_http_requests:rate1m)
+        eval_time: 2m
+        exp_samples:
+          - labels: '{job="nginx"}'
+            value: 10

@@ -1,0 +1,29 @@
+---
+# Recording rules: precompute expensive/common queries.
+# Naming convention: level:metric:operations
+groups:
+  - name: nginx.recording
+    rules:
+      - record: job:nginx_http_requests:rate1m
+        expr: sum by (job) (rate(nginx_http_requests_total[1m]))
+
+  - name: container.recording
+    rules:
+      # CPU usage in percent of one core, per container
+      - record: name:container_cpu_usage:percent
+        expr: sum by (name) (rate(container_cpu_usage_seconds_total{name!=""}[1m])) * 100
+
+      - record: name:container_memory_working_set:bytes
+        expr: sum by (name) (container_memory_working_set_bytes{name!=""})
+
+      # Only containers that have a memory limit (limit > 0)
+      - record: name:container_memory_usage:ratio
+        expr: |
+          sum by (name) (container_memory_working_set_bytes{name!=""})
+            /
+          (sum by (name) (container_spec_memory_limit_bytes{name!=""}) > 0)
+
+  - name: node.recording
+    rules:
+      - record: instance:node_cpu_utilisation:percent
+        expr: 100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[1m])) * 100)

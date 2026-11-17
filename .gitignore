@@ -1,0 +1,5 @@
+.env
+alertmanager/telegram_token
+*.log
+.DS_Store
+.claude/settings.local.json

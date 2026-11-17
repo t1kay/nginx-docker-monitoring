@@ -1,0 +1,54 @@
+---
+# Alerting rules. Every alert must have: `for`, label `severity`,
+# annotations `summary` + `description`. Covered by prometheus/tests/.
+groups:
+  - name: availability
+    rules:
+      - alert: TargetDown
+        expr: up == 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Target {{ $labels.job }} ({{ $labels.instance }}) is down"
+          description: "Prometheus cannot scrape {{ $labels.instance }} of job {{ $labels.job }} for more than 2 minutes."
+
+      - alert: NginxDown
+        expr: nginx_up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Nginx is down"
+          description: "nginx-exporter at {{ $labels.instance }} cannot read Nginx stub_status for more than 1 minute."
+
+  - name: nginx
+    rules:
+      - alert: NginxHighConnections
+        expr: nginx_connections_active > 50
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Nginx has many active connections"
+          description: "{{ $value }} active connections on {{ $labels.instance }} (threshold 50). Try scripts/load-test.sh to trigger this alert."
+
+  - name: containers
+    rules:
+      - alert: ContainerHighCPU
+        expr: name:container_cpu_usage:percent > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container {{ $labels.name }} uses high CPU"
+          description: "Container {{ $labels.name }} has used {{ $value | printf \"%.1f\" }}% CPU for more than 5 minutes."
+
+      - alert: ContainerHighMemory
+        expr: name:container_memory_usage:ratio > 0.9
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container {{ $labels.name }} is close to its memory limit"
+          description: "Container {{ $labels.name }} uses {{ $value | humanizePercentage }} of its memory limit."
